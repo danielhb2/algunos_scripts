@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# Modificación del script original de JianZcar - https://github.com/JianZcar/FuzPad
 SHELL=/bin/bash # Set the SHELL environment variable, fixes POSIX-incompatible shells
 FUZPAD_DIR="${FUZPAD_DIR:-"$HOME/Documents/.notes"}"
 TEXT_FORMAT="${FUZPAD_TEXT_FORMAT:-"txt"}"
