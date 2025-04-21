@@ -1,0 +1,439 @@
+#!/bin/bash
+
+SHELL=/bin/bash # Set the SHELL environment variable, fixes POSIX-incompatible shells
+FUZPAD_DIR="${FUZPAD_DIR:-"$HOME/Documents/.notes"}"
+TEXT_FORMAT="${FUZPAD_TEXT_FORMAT:-"txt"}"
+EDITOR="${EDITOR:-"nano"}"
+DATE_TIME_FORMAT="${FUZPAD_DATE_TIME_FORMAT:-"%d-%m-%Y-%H-%M-%S"}"
+ICON=${FUZPAD_ICON:-"1"} # 1 to use the icon and 0 to not use the icon
+BAT_THEME="${FUZPAD_BAT_THEME:-"OneHalfLight"}"
+REVERSE_LIST=${FUZPAD_REVERSE_LIST:-"false"} # Only applies to open and delete (default is false)
+PREVIEW_SIZE=${FUZPAD_PREVIEW_SIZE:-"70%"}
+START_LINE_SEARCH_PREVIEW=${FUZPAD_START_LINE_SEARCH_PREVIEW:-"5"} # Recommend 5 for start_line so user can see the highlighted line quickly in the search preview
+END_LINE_SEARCH_PREVIEW=${FUZPAD_END_LINE_SEARCH_PREVIEW:-"9999"}
+
+if [[ "$1" == "--test" ]]; then  --pointer=▶ \
+  --marker=+ \
+   echo "1"
+   exit 0
+fi
+
+get_current_date_time() {
+	echo $(date +"$DATE_TIME_FORMAT")
+}
+
+
+list_order() {
+  [ ! "$REVERSE_LIST" = true ] && echo "--tac"
+}
+
+render_icon(){
+if [ "$ICON" -eq 1 ]; then
+		case "$1" in
+			"📕") echo -e "\e[38;5;196m📕\e[0m" ;; # rojo
+			"📖") echo -e "\e[38;5;33m📖\e[0m" ;;   # azul
+			"📍") echo -e "\e[38;5;208m📍\e[0m" ;;  # naranja
+			"🔎") echo -e "\e[38;5;82m🔎\e[0m" ;;   # verde
+			"🔥") echo -e "\e[38;5;202m🔥\e[0m" ;;  # naranja fuego
+			"❓") echo -e "\e[38;5;5m❓\e[0m" ;;     # morado para ayuda
+			"") echo -e "\e[38;5;219m\e[0m" ;;   # rosado (esto es la gema de salida)
+			*) echo "$1" ;;
+		esac
+	else
+		echo ""
+	fi
+}
+
+get_title() {
+  local FILE="$1"
+  local FIRST_LINE
+  FIRST_LINE=$(sed -n '1p' "$FILE")
+  if [[ $FIRST_LINE == "#!"* ]]; then
+    sed -n '2p' "$FILE"
+  else
+    echo "$FIRST_LINE"
+  fi
+}
+
+export -f get_title
+
+get_tags() {
+  local FILE="$1"
+  local FIRST_LINE
+  FIRST_LINE=$(sed -n '1p' "$FILE")
+  if [[ $FIRST_LINE == "#!"* ]]; then
+    sed -n '3p' "$FILE"
+  else
+    sed -n '2p' "$FILE"
+  fi
+}
+
+# Función modificada para mostrar ayuda interactiva con fzf
+# Función modificada para mostrar ayuda interactiva con fzf
+show_help() {
+    local HELP_TOPICS=(
+        "Navegación General:Uso básico de teclas y controles"
+        "Opciones Principales:Descripción de cada función"
+        "Atajos:Atajos de teclado en previsualizaciones"
+        "Formato de Notas:Estructura recomendada para notas"
+        "Consejos:Tips para usar FuzPad eficientemente"
+        "Todo:Mostrar toda la ayuda"
+    )
+    
+    # Definimos el texto de ayuda completo
+    local HELP_TEXT=$(cat << 'EOT'
+# Ayuda de FuzPad
+
+## Navegación General
+- Use las flechas ↑/↓ para navegar entre opciones
+- Presione Enter para seleccionar
+- Presione Esc para volver al menú anterior
+
+## Opciones Principales
+- 📕 Nueva: Crea una nueva nota con fecha y hora automática
+- 📖 Abrir: Explora y abre notas existentes
+- 📍 Etiquetas: Busca notas por etiquetas (#hashtags)
+- 🔎 Buscar: Busca texto dentro de las notas
+- ❓ Ayuda: Muestra esta pantalla de ayuda
+- 🔥 Borrar: Elimina notas (selección múltiple con Tab)
+-  Salir: Cierra FuzPad
+
+## Atajos en Vistas de Previsualización
+- Espacio: desplaza una línea hacia abajo
+- Ctrl+espacio: desplaza una línea hacia arriba
+- Ctrl+X: Página arriba en la previsualización
+- Ctrl+Z: Página abajo en la previsualización
+
+## Formato de Notas
+- Primera línea: Título de la nota
+- Segunda línea: Etiquetas (#hashtag1 #hashtag2)
+- Resto: Contenido de la nota
+
+## Consejos
+- En el modo borrar, puede seleccionar múltiples notas usando Tab
+- Para confirmar el borrado escriba 'SI' o 'S' (en mayúsculas)
+- Para buscar, simplemente comience a escribir su consulta
+EOT
+)
+
+    # Exportamos la variable para usar en el preview
+    export HELP_TEXT
+    
+    printf "%s\n" "${HELP_TOPICS[@]}" | fzf --border --border-label="Ayuda de FuzPad" \
+        --border-label-pos=0 \
+        --ansi \
+        --bind "ctrl-x:preview-page-up,ctrl-z:preview-page-down" \
+        --bind "ctrl-space:preview-up,space:preview-down" \
+        --color=label:#f2ff00,fg:7,bg:#000088,hl:2,fg+:15,bg+:2,hl+:14,info:3,prompt:2,pointer:#000000,marker:1,spinner:6,border:7,header:2:bold,preview-fg:7,preview-bg:#000000 \
+        --layout=reverse \
+        --highlight-line \
+        --pointer=▶ \
+        --marker=+ \
+        --prompt="$(render_icon '❓')Seleccione tema > " \
+        --preview-window=down:$PREVIEW_SIZE:noinfo:wrap \
+        --preview-label=' [ ctrl-x, ctrl-z, espacio, ctrl-espacio ] ' \
+        --preview='
+            IFS=":" read -r TOPIC DESC <<< {}
+            case "$TOPIC" in
+                "Navegación General")
+                    echo "# Navegación General" | bat --color=always --theme="'"$BAT_THEME"'" --style=plain
+                    echo "$HELP_TEXT" | sed -n "/^## Navegación General/,/^##/p" | sed "/^##[^#]/d" | bat --color=always --theme="'"$BAT_THEME"'" --style=plain
+                    ;;
+                "Opciones Principales")
+                    echo "# Opciones Principales" | bat --color=always --theme="'"$BAT_THEME"'" --style=plain
+                    echo "$HELP_TEXT" | sed -n "/^## Opciones Principales/,/^##/p" | sed "/^##[^#]/d" | bat --color=always --theme="'"$BAT_THEME"'" --style=plain
+                    ;;
+                "Atajos")
+                    echo "# Atajos en Vistas de Previsualización" | bat --color=always --theme="'"$BAT_THEME"'" --style=plain
+                    echo "$HELP_TEXT" | sed -n "/^## Atajos/,/^##/p" | sed "/^##[^#]/d" | bat --color=always --theme="'"$BAT_THEME"'" --style=plain
+                    ;;
+                "Formato de Notas")
+                    echo "# Formato de Notas" | bat --color=always --theme="'"$BAT_THEME"'" --style=plain
+                    echo "$HELP_TEXT" | sed -n "/^## Formato de Notas/,/^##/p" | sed "/^##[^#]/d" | bat --color=always --theme="'"$BAT_THEME"'" --style=plain
+                    ;;
+                "Consejos")
+                    echo "# Consejos" | bat --color=always --theme="'"$BAT_THEME"'" --style=plain
+                    echo "$HELP_TEXT" | sed -n "/^## Consejos/,/^##/p" | sed "/^##[^#]/d" | bat --color=always --theme="'"$BAT_THEME"'" --style=plain
+                    ;;
+                "Todo")
+                    echo "$HELP_TEXT" | bat --color=always --theme="'"$BAT_THEME"'" --style=plain
+                    ;;
+            esac'
+}
+
+show_menu() {
+	# Define the menu items with icons
+	local ICON_NUEVA="$(render_icon '📕')"
+	local ICON_ABRIR="$(render_icon '📖')"
+	local ICON_ETIQUETAS="$(render_icon '📍')"
+	local ICON_BUSCAR="$(render_icon '🔎')"
+	local ICON_AYUDA="$(render_icon '❓')"
+	local ICON_BORRAR="$(render_icon '🔥')"
+	local ICON_SALIR="$(render_icon '')"
+	
+	local ACTIONS=("$ICON_NUEVA Nueva" "$ICON_ABRIR Abrir" \
+              "$ICON_ETIQUETAS Etiquetas" "$ICON_BUSCAR Buscar" \
+              "$ICON_AYUDA Ayuda" "$ICON_BORRAR Borrar" \
+              "$ICON_SALIR  Salir")
+
+	while true; do
+		local SELECTED_ACTION=$(printf "%s\n" "${ACTIONS[@]}" | fzf --border --border-label="FuzPad" --border-label-pos=0 \
+		--info=hidden \
+		--cycle \
+		--ansi \
+		--pointer=▶ \
+        --marker=+ \
+		--preview-label=' [ ctrl-x, ctrl-z, espacio, ctrl-espacio ] ' \
+		--color=label:#f2ff00,fg:7,bg:#000088,hl:2,fg+:15,bg+:2,hl+:14,info:3,prompt:2,pointer:#000000,marker:1,spinner:6,border:7,header:2:bold,preview-fg:7,preview-bg:#000000 \
+		--layout=reverse --highlight-line )
+		
+		[[ -z $SELECTED_ACTION ]] && break
+		
+		# Simplificar la lógica de case para evitar problemas con los códigos ANSI
+		if [[ $SELECTED_ACTION == *"Nueva" ]]; then
+			create_new_note
+		elif [[ $SELECTED_ACTION == *"Abrir" ]]; then
+			open_note
+		elif [[ $SELECTED_ACTION == *"Etiquetas" ]]; then
+			open_tags
+		elif [[ $SELECTED_ACTION == *"Buscar" ]]; then
+			search_notes
+		elif [[ $SELECTED_ACTION == *"Ayuda" ]]; then
+			show_help
+		elif [[ $SELECTED_ACTION == *"Borrar" ]]; then
+			delete_notes
+		elif [[ $SELECTED_ACTION == *"Salir" ]]; then
+			break
+		fi
+	done
+	
+clear
+tput setaf 6 bold;echo +------------------------------------------+
+echo                  ":                                          :"
+echo                  ":               HASTA PRONTO               :"
+echo                  ":                                          :"
+echo                   +------------------------------------------+
+}
+
+create_new_note(){
+	local NOTE_PREFIX="$FUZPAD_DIR/$(get_current_date_time)"
+	if [ -f "$NOTE_PREFIX.$TEXT_FORMAT" ]; then
+		local N=1
+		while [ -f "${NOTE_PREFIX}-$N.$TEXT_FORMAT" ]; do ((N++)); done
+		${EDITOR} "${NOTE_PREFIX}-$N.$TEXT_FORMAT"
+		return
+	fi
+	${EDITOR} "$NOTE_PREFIX.$TEXT_FORMAT"
+}
+
+open_note(){
+	while true; do
+		local NOTE_DATA=$(ls -p "$FUZPAD_DIR" | grep -v '/$' | \
+		while read -r NOTE; do echo "$(get_title "$FUZPAD_DIR/$NOTE" | sed "s/://g"):$(basename "$NOTE")"; done | fzf --border --border-label="FuzPad" \
+		--border-label-pos=0 \
+		--color=label:#f2ff00,fg:7,bg:#000088,hl:2,fg+:15,bg+:2,hl+:14,info:3,prompt:2,pointer:#000000,marker:1,spinner:6,border:7,header:2:bold,preview-fg:7,preview-bg:#000000 \
+		--highlight-line \
+		--layout=reverse $(list_order) \
+		--bind "ctrl-x:preview-page-up,ctrl-z:preview-page-down" \
+		--bind "ctrl-space:preview-up,space:preview-down" \
+		--ignore-case --prompt="$(render_icon '📖') Abrir > " \
+		--preview-window=down:$PREVIEW_SIZE:noinfo:wrap \
+		--preview-label=' [ ctrl-x, ctrl-z, espacio, ctrl-espacio ] ' \
+		--ansi \
+		--pointer=▶ \
+        --marker=+ \
+		--preview='
+			IFS=":" read -r TITLE NOTE <<< {}
+			echo -e "\e[1m$NOTE\e[0m"; echo
+			echo -e "\e[1m$TITLE\e[0m" | bat --color=always --theme='$BAT_THEME' --style=plain
+			sed "1{/^#!/ { n; d; }; d; }" "'$FUZPAD_DIR'/$NOTE" | bat --color=always --theme='$BAT_THEME' --style=plain')
+		[[ -z $NOTE_DATA ]] && break
+		
+		IFS=":" read -r TITLE NOTE <<< "$NOTE_DATA"
+		${EDITOR} "$FUZPAD_DIR/$NOTE"
+	done
+}
+
+delete_notes(){
+	local NOTES_DATA=$(ls -p "$FUZPAD_DIR" | grep -v '/$' | \
+	while read -r NOTE; do echo "$(get_title "$FUZPAD_DIR/$NOTE" | sed "s/://g"):$(basename "$NOTE")"; done | fzf --border --border-label="FuzPad - <TAB> para seleccionar notas" \
+	--border-label-pos=0 \
+	--color=label:#f2ff00,fg:7,bg:#000088,hl:2,fg+:15,bg+:2,hl+:14,info:3,prompt:2,pointer:#000000,marker:1,spinner:6,border:7,header:2:bold,preview-fg:7,preview-bg:#000000 \
+	--highlight-line \
+	--ansi \
+	--bind "ctrl-x:preview-page-up,ctrl-z:preview-page-down" \
+	--bind "ctrl-space:preview-up,space:preview-down" \
+	--layout=reverse $(list_order) \
+	--preview-label=' [ ctrl-x, ctrl-z, espacio, ctrl-espacio ] ' \
+	--multi --ignore-case --prompt="$(render_icon '🔥') Borrar > " \
+	--preview-window=down:$PREVIEW_SIZE:noinfo:wrap \
+	--pointer=▶ \
+    --marker=+ \
+	--preview='
+		IFS=":" read -r TITLE NOTE <<< {}
+		echo -e "\e[1m$NOTE\e[0m"; echo
+		echo -e "\e[1m$TITLE\e[0m" | bat --color=always --theme='$BAT_THEME' --style=plain
+		sed "1{/^#!/ { n; d; }; d; }" "'$FUZPAD_DIR'/$NOTE" | bat --color=always --theme='$BAT_THEME' --style=plain')
+		
+	local NOTES=()  
+
+	while IFS=":" read -r TITLE NOTE; do
+		NOTES+=("$NOTE") 
+	done <<< "$NOTES_DATA"
+
+	if [[ -n "$NOTES" ]]; then
+		local CONFIRMATION=$(printf "%s\n" "${NOTES[@]}" | \
+		sort -n | cut -d ' ' -f2- | \
+		while read -r NOTE; do echo "$(get_title "$FUZPAD_DIR/$NOTE" | sed "s/://g"):$(basename "$NOTE")"; done | \
+		fzf --print-query --border --border-label="FuzPad" \
+		--border-label-pos=0 \
+		--highlight-line \
+		--ansi \
+		--pointer=▶ \
+        --marker=+ \
+		--color=label:#f2ff00,fg:7,bg:#000088,hl:2,fg+:15,bg+:2,hl+:14,info:3,prompt:2,pointer:#000000,marker:1,spinner:6,border:7,header:2:bold,preview-fg:7,preview-bg:#000000 \
+		--layout=reverse $(list_order) \
+		--disabled --prompt="Erscriba 'SI' o 'S' (en mayúsculas) para confirmar borrado > " \
+		--preview-window=down:$PREVIEW_SIZE:noinfo:wrap \
+		--preview-label=' [ ctrl-x, ctrl-z, espacio, ctrl-espacio ] ' \
+		--preview='
+			IFS=":" read -r TITLE NOTE <<< {}
+			echo -e "\e[1m$NOTE\e[0m"; echo
+			echo -e "\e[1m$TITLE\e[0m" | bat --color=always --theme='$BAT_THEME' --style=plain
+			sed "1{/^#!/ { n; d; }; d; }" "'$FUZPAD_DIR'/$NOTE" | bat --color=always --theme='$BAT_THEME' --style=plain' | sed -n '1p')
+
+		if [[ "$CONFIRMATION" =~ ^[S][I]?$ ]]; then
+			for NOTE in "${NOTES[@]}"; do
+				rm "$FUZPAD_DIR/$NOTE"	
+			done
+		fi
+	fi
+}
+
+search_notes(){
+	while true; do
+		local SELECTED=$( \
+			if [[ -z "$LAST_QUERY" ]]; then
+				echo "Enter your query to begin searching"
+			else
+				RESULTS=$(ls -p "$FUZPAD_DIR" | grep -v '/$' | xargs grep -ni "$LAST_QUERY"  2> /dev/null)
+				[ -n "$RESULTS" ] && echo "Found $(echo "$RESULTS" | wc -l) results" || \
+				{ echo "Found 0 results"; exit; }
+				echo "$RESULTS" |
+				while IFS=: read -r NOTE LINE CONTENT; do
+					CLEANED_CONTENT=$(echo "$CONTENT" | sed "s/://g")
+					echo "$CLEANED_CONTENT:$LINE:$(basename "$NOTE")"
+				done
+			fi | \
+			fzf --print-query --query="$LAST_QUERY" \
+			--bind "ctrl-x:preview-page-up,ctrl-z:preview-page-down" \
+			--bind "ctrl-space:preview-up,space:preview-down" \
+			--ansi \
+			--pointer=▶ \
+            --marker=+ \
+			--bind 'change:reload(
+				if [[ -z {q} ]]; then
+					echo "Enter your query to begin searching"
+				else
+					QUERY={q}
+					RESULTS=$(ls -p '$FUZPAD_DIR' | grep -v "/$" | xargs grep -ni "$QUERY" 2> /dev/null)
+					[ -n "$RESULTS" ] && echo "Found $(echo "$RESULTS" | wc -l) results" || \
+					{ echo "Found 0 results"; exit; }
+					echo "$RESULTS" |
+					while IFS=: read -r NOTE LINE CONTENT; do
+						CLEANED_CONTENT=$(echo "$CONTENT" | sed "s/://g")
+						echo "$CLEANED_CONTENT:$LINE:$(basename "$NOTE")"
+					done
+				fi)' \
+			--border --border-label="FuzPad" --border-label-pos=0 \
+			--highlight-line --layout=reverse --no-info --preview-window=down:$PREVIEW_SIZE:noinfo:wrap \
+			--color=label:#f2ff00,fg:7,bg:#000088,hl:2,fg+:15,bg+:2,hl+:14,info:3,prompt:2,pointer:#000000,marker:1,spinner:6,border:7,header:2:bold,preview-fg:7,preview-bg:#000000 \
+			--ignore-case --header-lines=1 --prompt="$(render_icon '🔎') Buscar > " \
+			--preview-label=' [ ctrl-x, ctrl-z, espacio, ctrl-espacio ] ' \
+			--preview 'IFS=":" read -r CONTENT LINE NOTE <<< {}
+				[[ -z {q} ]] && exit
+				QUERY={q}
+				if ! [[ -z {} ]]; then
+					TITLE=$(get_title "'$FUZPAD_DIR'/$NOTE" | sed "s/://g")
+					TITLE_LINE=$(if head -n 1 "'$FUZPAD_DIR'/$NOTE" | grep -q "^#!"; then echo 2; else echo 1; fi)
+					MAX_LINES=$(wc -l < "'$FUZPAD_DIR'/$NOTE")
+					START_LINE=$(($LINE > '$START_LINE_SEARCH_PREVIEW' ? $LINE - '$START_LINE_SEARCH_PREVIEW' : 1))
+					END_LINE=$(($LINE + 5 < '$END_LINE_SEARCH_PREVIEW' ? $LINE + '$END_LINE_SEARCH_PREVIEW' : MAX_LINES))
+					echo -e "\e[1m$NOTE\e[0m"; echo
+					[ "$LINE" -ne $TITLE_LINE ] && echo -e "\e[1m$TITLE\e[0m" | bat --color=always --theme='$BAT_THEME' --style=plain && \
+					sed "1{/^#!/ { n; d; }; d; }" "'$FUZPAD_DIR'/$NOTE" | \
+					sed -e "$(( LINE > 1 ? LINE - 1 : 1 ))s|$(printf "%s" "$QUERY" | sed "s|[][&]|\\&|g")|\x1b[4m&\x1b[24m|gi" | \
+					sed -E "$(( LINE > 1 ? LINE - 1 : 1 ))s/(.*)/\x1b[47m\1\x1b[0m/" | \
+					bat --color=always --theme='$BAT_THEME' --style=plain --paging=always \
+					--line-range $(( START_LINE > 1 ? START_LINE - 1 : 1 )):$END_LINE && exit
+					
+					echo -e "$TITLE" | \
+					sed -e "1s/.*/\x1b[1m&\x1b[22m/" \
+					-e "1s|$(printf "%s" "$QUERY" | sed "s|[][&]|\\&|g")|\x1b[4m&\x1b[24m\x1b[1m|gi" | \
+					sed -E "1s/(.*)/\x1b[47m\1\x1b[0m/" | \
+					bat --color=always --theme='$BAT_THEME' --style=plain --paging=always && \
+					sed "1{/^#!/ { n; d; }; d; }" "'$FUZPAD_DIR'/$NOTE" | bat --color=always --theme='$BAT_THEME' --style=plain --line-range 1:$END_LINE 
+				fi')
+		[[ -z $SELECTED ]] && break
+		
+		local LAST_QUERY="$(echo "$SELECTED" | sed -n '1p')"
+		IFS=":" read -r CONTENT LINE NOTE <<< $(echo "$SELECTED" | sed -n '2p')
+		${EDITOR} +$LINE "$FUZPAD_DIR/$NOTE"
+	done
+	LAST_QUERY=""
+}
+
+open_tags(){
+	while true; do
+		local TAG=$(ls -p "$FUZPAD_DIR" | grep -v '/$' | while read -r NOTE; do get_tags "$FUZPAD_DIR/$NOTE" | grep -oE '#[A-Za-z0-9_]+'; done | sort -u | \
+		fzf --border --border-label="FuzPad" \
+		--ansi \
+		--pointer=▶ \
+        --marker=+ \
+		--border-label-pos=0 \
+		--layout=reverse \
+		--bind "ctrl-x:preview-page-up,ctrl-z:preview-page-down" \
+		--bind "ctrl-space:preview-up,space:preview-down" \
+		--ignore-case \
+		--color=label:#f2ff00,fg:7,bg:#000088,hl:2,fg+:15,bg+:2,hl+:14,info:3,prompt:2,pointer:#000000,marker:1,spinner:6,border:7,header:2:bold,preview-fg:7,preview-bg:#000000 \
+		--prompt="$(render_icon '📍') Etiquetas > " --highlight-line )
+		[[ -z $TAG ]] && break
+		
+		if [[ -n "$TAG" ]]; then		
+			local NOTE_DATA=$(ls -p "$FUZPAD_DIR" | grep -v '/$' | while read -r NOTE; do get_tags "$FUZPAD_DIR/$NOTE" | grep -q "$TAG" && echo "$NOTE"; done | \
+			while read -r NOTE; do echo "$(get_title "$FUZPAD_DIR/$NOTE" | sed "s/://g"):$(basename "$FUZPAD_DIR/$NOTE")"; done | \
+			fzf --border --border-label="FuzPad" \
+			--border-label-pos=0 \
+			--ansi \
+			--pointer=▶ \
+            --marker=+ \
+			--bind "ctrl-x:preview-page-up,ctrl-z:preview-page-down" \
+			--bind "ctrl-space:preview-up,space:preview-down" \
+			--color=label:#f2ff00,fg:7,bg:#000088,hl:2,fg+:15,bg+:2,hl+:14,info:3,prompt:2,pointer:#000000,marker:1,spinner:6,border:7,header:2:bold,preview-fg:7,preview-bg:#000000 \
+			--highlight-line \
+			--layout=reverse $(list_order) \
+			--ignore-case --prompt="$(render_icon '📖') Abrir > " \
+			--preview-window=down:$PREVIEW_SIZE:noinfo:wrap \
+			--preview-label=' [ ctrl-x, ctrl-z, espacio, ctrl-espacio ] ' \
+			--preview='
+			IFS=":" read -r TITLE NOTE <<< {}
+			echo -e "\e[1m$NOTE\e[0m"; echo
+			echo -e "\e[1m$TITLE\e[0m" | bat --color=always --theme='$BAT_THEME' --style=plain
+			sed "1{/^#!/ { n; d; }; d; }" "'$FUZPAD_DIR'/$NOTE" | bat --color=always --theme='$BAT_THEME' --style=plain')
+			
+			if [[ -n "$NOTE_DATA" ]]; then	
+				IFS=":" read -r TITLE NOTE <<< "$NOTE_DATA"
+				${EDITOR} "$FUZPAD_DIR/$NOTE"
+			fi
+		fi
+	done
+}
+
+
+# Creates FUZZPAD_DIR if it does not exist.
+if [[ ! -d "$FUZPAD_DIR" ]]; then
+	mkdir -p "$FUZPAD_DIR"
+fi
+
+cd "$FUZPAD_DIR"
+show_menu
