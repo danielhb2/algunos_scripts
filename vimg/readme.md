@@ -148,7 +148,7 @@ sudo snap install feh
 
 1. Descarga el script `vimg.sh`:
    ```bash
-   curl -o vimg.sh algunos_scripts/tree/main/vimg/vimg.sh
+   curl -o vimg.sh https://github.com/danielhb2/algunos_scripts/tree/main/vimg/vimg.sh
    ```
 
 2. Dale permisos de ejecución:
